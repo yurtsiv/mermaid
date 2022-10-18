@@ -10,6 +10,9 @@ import {
   setAccDescription,
   clear as commonClear,
 } from '../../commonDb';
+import utils from '../../utils';
+
+const sanitizeText = (txt) => common.sanitizeText(txt, configApi.getConfig());
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 let rootDoc = [];
@@ -263,10 +266,148 @@ export const relationType = {
 
 const trimColon = (str) => (str && str[0] === ':' ? str.substr(1).trim() : str.trim());
 
+/**
+ * Function to lookup domId from id in the graph definition.
+ *
+ * @param id
+ * @public
+ */
+export const lookUpDomId = function (id) {
+  const classKeys = Object.keys(classes);
+  for (let i = 0; i < classKeys.length; i++) {
+    if (classes[classKeys[i]].id === id) {
+      return classes[classKeys[i]].domId;
+    }
+  }
+};
+
+const MERMAID_DOM_ID_PREFIX = 'stateid-';
+
+/**
+ * Called by parser when a special node is found, e.g. a clickable element.
+ *
+ * @param ids Comma separated list of ids
+ * @param className Class to add
+ */
+export const setCssClass = function (ids, className) {
+  ids.split(',').forEach(function (_id) {
+    let id = _id;
+    if (_id[0].match(/\d/)) id = MERMAID_DOM_ID_PREFIX + id;
+    if (typeof classes[id] !== 'undefined') {
+      classes[id].cssClasses.push(className);
+    }
+  });
+};
+
+/**
+ * Called by parser when a click definition is found. Registers an event handler.
+ *
+ * @param ids Comma separated list of ids
+ * @param functionName Function to be called on click
+ * @param functionArgs Function args the function should be called with
+ */
+export const setClickEvent = function (ids, functionName, functionArgs) {
+  ids.split(',').forEach(function (id) {
+    setClickFunc(id, functionName, functionArgs);
+    classes[id].haveCallback = true;
+  });
+  setCssClass(ids, 'clickable');
+};
+
+let funs = [];
+
+export const bindFunctions = function (element) {
+  funs.forEach(function (fun) {
+    fun(element);
+  });
+};
+
+const setClickFunc = function (domId, functionName, functionArgs) {
+  const config = configApi.getConfig();
+  let id = domId;
+  let elemId = lookUpDomId(id);
+
+  if (config.securityLevel !== 'loose') {
+    return;
+  }
+  if (typeof functionName === 'undefined') {
+    return;
+  }
+  if (typeof classes[id] !== 'undefined') {
+    let argList = [];
+    if (typeof functionArgs === 'string') {
+      /* Splits functionArgs by ',', ignoring all ',' in double quoted strings */
+      argList = functionArgs.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+      for (let i = 0; i < argList.length; i++) {
+        let item = argList[i].trim();
+        /* Removes all double quotes at the start and end of an argument */
+        /* This preserves all starting and ending whitespace inside */
+        if (item.charAt(0) === '"' && item.charAt(item.length - 1) === '"') {
+          item = item.substr(1, item.length - 2);
+        }
+        argList[i] = item;
+      }
+    }
+
+    /* if no arguments passed into callback, default to passing in id */
+    if (argList.length === 0) {
+      argList.push(elemId);
+    }
+
+    funs.push(function () {
+      const elem = document.querySelector(`[id="${elemId}"]`);
+      if (elem !== null) {
+        elem.addEventListener(
+          'click',
+          function () {
+            utils.runFunc(functionName, ...argList);
+          },
+          false
+        );
+      }
+    });
+  }
+};
+
+/**
+ * Called by parser when a link is found. Adds the URL to the vertex data.
+ *
+ * @param ids Comma separated list of ids
+ * @param linkStr URL to create a link for
+ * @param target Target of the link, _blank by default as originally defined in the svgDraw.js file
+ */
+export const setLink = function (ids, linkStr, target) {
+  const config = configApi.getConfig();
+  ids.split(',').forEach(function (_id) {
+    let id = _id;
+    if (_id[0].match(/\d/)) id = MERMAID_DOM_ID_PREFIX + id;
+    if (typeof classes[id] !== 'undefined') {
+      classes[id].link = utils.formatUrl(linkStr, config);
+      if (config.securityLevel === 'sandbox') {
+        classes[id].linkTarget = '_top';
+      } else if (typeof target === 'string') {
+        classes[id].linkTarget = sanitizeText(target);
+      } else {
+        classes[id].linkTarget = '_blank';
+      }
+    }
+  });
+  setCssClass(ids, 'clickable');
+};
+
+const setTooltip = function (ids, tooltip) {
+  ids.split(',').forEach(function (id) {
+    if (typeof tooltip !== 'undefined') {
+      tooltips[version === 'gen-1' ? lookUpDomId(id) : id] = sanitizeText(tooltip);
+    }
+  });
+};
+
 export default {
   parseDirective,
   getConfig: () => configApi.getConfig().state,
   addState,
+  bindFunctions,
   clear,
   getState,
   getStates,
@@ -275,7 +416,9 @@ export default {
   getDirection,
   addRelation,
   getDividerId,
+  setClickEvent,
   setDirection,
+  setLink,
   cleanupLabel,
   lineType,
   relationType,

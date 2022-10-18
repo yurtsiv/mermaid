@@ -33,6 +33,7 @@ import utils, { directiveSanitizer } from './utils';
 import DOMPurify from 'dompurify';
 import { MermaidConfig } from './config.type';
 import { evaluate } from './diagrams/common/common';
+import stateDb from './diagrams/state/stateDb';
 
 let hasLoadedDiagrams = false;
 
@@ -366,6 +367,9 @@ const render = async function (
       case 'class':
       case 'classDiagram':
         cb(svgCode, classDb.bindFunctions);
+        break;
+      case 'stateDiagram':
+        cb(svgCode, stateDb.bindFunctions);
         break;
       default:
         cb(svgCode);

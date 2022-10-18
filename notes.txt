@@ -1,0 +1,2 @@
+Start/end state can't be specified as click target as it's ambiguous
+Note ids can't be specified?

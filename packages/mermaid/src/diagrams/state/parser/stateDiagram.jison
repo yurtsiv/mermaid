@@ -28,6 +28,11 @@
 %x NOTE_TEXT
 %x FLOATING_NOTE
 %x FLOATING_NOTE_ID
+%x generic_string
+%x click
+%x href
+%x callbackname
+%x callbackargs
 %x struct
 %x open_directive
 %x type_directive
@@ -57,6 +62,25 @@
 <ID,STATE,struct,LINE,open_directive,type_directive,arg_directive,close_directive>((?!\n)\s)+       /* skip same-line whitespace */
 <INITIAL,ID,STATE,struct,LINE,open_directive,type_directive,arg_directive,close_directive>\#[^\n]*  /* skip comments */
 \%%[^\n]*                        /* skip comments */
+
+<INITIAL,struct>"href"[\s]+["]          this.begin("href");
+<href>["]               this.popState();
+<href>[^"]*             return 'HREF';
+
+"_self"               return 'LINK_TARGET';
+"_blank"              return 'LINK_TARGET';
+"_parent"             return 'LINK_TARGET';
+"_top"                return 'LINK_TARGET';
+
+"call"[\s]+             this.begin("callbackname");
+<callbackname>\([\s]*\) this.popState();
+<callbackname>\(        this.popState(); this.begin("callbackargs");
+<callbackname>[^(]*     return 'CALLBACKNAME';
+<callbackargs>\)        this.popState();
+<callbackargs>[^)]*     return 'CALLBACKARGS';
+
+<INITIAL,struct>"click"[\s]           return 'CLICK';
+
 "scale"\s+            { this.pushState('SCALE'); /* console.log('Got scale', yytext);*/ return 'scale'; }
 <SCALE>\d+            return 'WIDTH';
 <SCALE>\s+"width"     {this.popState();}
@@ -104,6 +128,10 @@ accDescr\s*"{"\s*                                { this.begin("acc_descr_multili
 <NOTE_TEXT>\s*":"[^:\n;]+       { this.popState();/*console.log('Got NOTE_TEXT for note',yytext);*/yytext = yytext.substr(2).trim();return 'NOTE_TEXT';}
 <NOTE_TEXT>[\s\S]*?"end note"       { this.popState();/*console.log('Got NOTE_TEXT for note',yytext);*/yytext = yytext.slice(0,-8).trim();return 'NOTE_TEXT';}
 
+["]                             this.begin("generic_string");
+<generic_string>["]             this.popState();
+<generic_string>[^"]*           return "GENERIC_STRING";
+
 "stateDiagram"\s+                   { /*console.log('Got state diagram', yytext,'#');*/return 'SD'; }
 "stateDiagram-v2"\s+                   { /*console.log('Got state diagram', yytext,'#');*/return 'SD'; }
 "hide empty description"    { /*console.log('HIDE_EMPTY', yytext,'#');*/return 'HIDE_EMPTY'; }
@@ -148,7 +176,8 @@ line
 	;
 
 statement
-	: idStatement { /*console.warn('got id and descr', $1);*/$$={ stmt: 'state', id: $1, type: 'default', description: ''};}
+	: clickStatement
+    | idStatement { /*console.warn('got id and descr', $1);*/$$={ stmt: 'state', id: $1, type: 'default', description: ''};}
 	| idStatement DESCR { /*console.warn('got id and descr', $1, $2.trim());*/$$={ stmt: 'state', id: $1, type: 'default', description: yy.trimColon($2)};}
 	| idStatement '-->' idStatement
     {
@@ -226,6 +255,21 @@ direction
 eol
     : NL
     | ';'
+    ;
+
+clickStatement
+    : CLICK ID CALLBACKNAME                                 { $$ = $1;yy.setClickEvent($2, $3);}
+    | CLICK ID CALLBACKNAME GENERIC_STRING                  { $$ = $1;yy.setClickEvent($2, $3);yy.setTooltip($2, $4);}
+    | CLICK ID CALLBACKNAME CALLBACKARGS                    { $$ = $1;yy.setClickEvent($2, $3, $4);}
+    | CLICK ID CALLBACKNAME CALLBACKARGS GENERIC_STRING     { $$ = $1;yy.setClickEvent($2, $3, $4);yy.setTooltip($2, $5);}
+    | CLICK ID HREF                                         { $$ = $1;yy.setLink($2, $3);}
+    | CLICK ID HREF LINK_TARGET                             { $$ = $1;yy.setLink($2, $3, $4);}
+    | CLICK ID HREF GENERIC_STRING                          { $$ = $1;yy.setLink($2, $3);yy.setTooltip($4);}
+    | CLICK ID HREF GENERIC_STRING LINK_TARGET              { $$ = $1;yy.setLink($2, $3, $5);yy.setTooltip($4);}
+    | CLICK ID GENERIC_STRING                               { $$ = $1;yy.setLink($2, $3);}
+    | CLICK ID GENERIC_STRING LINK_TARGET                   { $$ = $1;yy.setLink($2, $3, $4);}
+    | CLICK ID GENERIC_STRING GENERIC_STRING                { $$ = $1;yy.setLink($2, $3);yy.setTooltip($4);}
+    | CLICK ID GENERIC_STRING GENERIC_STRING LINK_TARGET    { $$ = $1;yy.setLink($2, $3, $5);yy.setTooltip($4);}
     ;
 
 idStatement
